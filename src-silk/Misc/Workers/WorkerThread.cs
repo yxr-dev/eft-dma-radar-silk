@@ -12,6 +12,8 @@ namespace eft_dma_radar.Silk.Misc.Workers
     ///   <item><b>DynamicSleep</b> — Sleeps for <c>SleepDuration - workTime</c>, so the total
     ///   cycle time stays close to <see cref="SleepDuration"/> regardless of how long the work takes.</item>
     /// </list>
+    /// Sleep is cancellable — <see cref="Dispose"/> wakes the worker immediately rather than
+    /// waiting for the sleep interval to expire.
     /// </summary>
     /// <remarks>
     /// Must call <see cref="Dispose"/> or the thread will never exit.
@@ -19,6 +21,7 @@ namespace eft_dma_radar.Silk.Misc.Workers
     internal sealed class WorkerThread : IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
+        private Thread? _thread;
         private bool _started;
 
         /// <summary>
@@ -58,13 +61,27 @@ namespace eft_dma_radar.Silk.Misc.Workers
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (Interlocked.Exchange(ref _started, true) == false)
             {
-                new Thread(Worker)
+                _thread = new Thread(Worker)
                 {
                     IsBackground = true,
                     Priority = ThreadPriority,
                     Name = Name
-                }.Start();
+                };
+                _thread.Start();
             }
+        }
+
+        /// <summary>
+        /// Blocks until the worker thread has exited, or <paramref name="timeout"/> elapses.
+        /// Returns <see langword="true"/> if the thread exited cleanly within the timeout.
+        /// Safe to call after <see cref="Dispose"/>.
+        /// </summary>
+        public bool Join(TimeSpan timeout)
+        {
+            var t = _thread;
+            if (t is null || !t.IsAlive)
+                return true;
+            return t.Join(timeout);
         }
 
         private void Worker()
@@ -73,6 +90,7 @@ namespace eft_dma_radar.Silk.Misc.Workers
             bool shouldSleep = SleepDuration > TimeSpan.Zero;
             bool dynamicSleep = shouldSleep && SleepMode == WorkerSleepMode.DynamicSleep;
             var ct = _cts.Token;
+            var waitHandle = ct.WaitHandle;
 
             while (!ct.IsCancellationRequested)
             {
@@ -94,17 +112,26 @@ namespace eft_dma_radar.Silk.Misc.Workers
                 {
                     if (!ct.IsCancellationRequested)
                     {
+                        TimeSpan toSleep;
                         if (dynamicSleep)
                         {
                             var elapsed = Stopwatch.GetElapsedTime(start);
-                            var remaining = SleepDuration - elapsed;
-                            if (remaining > TimeSpan.Zero)
-                                Thread.Sleep(remaining);
+                            toSleep = SleepDuration - elapsed;
                         }
                         else if (shouldSleep)
                         {
-                            Thread.Sleep(SleepDuration);
+                            toSleep = SleepDuration;
                         }
+                        else
+                        {
+                            toSleep = TimeSpan.Zero;
+                        }
+
+                        // Cancellable sleep — wakes immediately on Dispose so we don't
+                        // burn up to SleepDuration on shutdown. Falls through with zero/
+                        // negative durations (no-op).
+                        if (toSleep > TimeSpan.Zero)
+                            waitHandle.WaitOne(toSleep);
                     }
                 }
             }
@@ -120,9 +147,13 @@ namespace eft_dma_radar.Silk.Misc.Workers
         {
             if (Interlocked.Exchange(ref _disposed, true) == false)
             {
-                _cts.Cancel();
+                // Cancel only — do NOT dispose the CTS here. The worker thread is
+                // still observing _cts.Token; disposing the CTS underneath it would
+                // throw ObjectDisposedException on the worker, which would be caught
+                // as a generic worker error and logged as spam. The CTS will be
+                // collected with the WorkerThread instance.
+                try { _cts.Cancel(); } catch (ObjectDisposedException) { }
                 PerformWork = null;
-                _cts.Dispose();
             }
         }
 

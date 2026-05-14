@@ -433,11 +433,13 @@ namespace eft_dma_radar.Silk.Tarkov.GameWorld
 
             // Loot runs on its own thread so a 120-180ms loot scatter never blocks
             // the registration or realtime workers (player positions / registration).
+            // LootManager.Refresh is internally rate-limited to once every 5 seconds,
+            // so a 1s tick still hits within one tick of the rate-limit expiring.
             _lootWorker = new WorkerThread
             {
                 Name = "Loot Worker",
                 ThreadPriority = ThreadPriority.BelowNormal,
-                SleepDuration = TimeSpan.FromMilliseconds(250),
+                SleepDuration = TimeSpan.FromMilliseconds(1000),
                 SleepMode = WorkerSleepMode.DynamicSleep
             };
             _lootWorker.PerformWork += LootWorker_PerformWork;
@@ -501,11 +503,23 @@ namespace eft_dma_radar.Silk.Tarkov.GameWorld
             // cooldown because the post-raid stats screen keeps the GameWorld alive.
             BeginCooldown(IsHideout ? 1 : 12);
 
+            // Cancel all workers first so they all stop in parallel rather than serially.
             _realtimeWorker?.Dispose();
             _cameraWorker?.Dispose();
             _registrationWorker?.Dispose();
             _explosivesWorker?.Dispose();
             _lootWorker?.Dispose();
+
+            // Then wait for each to exit before we proceed (downstream code may
+            // tear down state the workers are still referencing). Bounded so a
+            // stuck worker can't hang the radar — 2s is well above any tick budget.
+            var joinTimeout = TimeSpan.FromSeconds(2);
+            _realtimeWorker?.Join(joinTimeout);
+            _cameraWorker?.Join(joinTimeout);
+            _registrationWorker?.Join(joinTimeout);
+            _explosivesWorker?.Join(joinTimeout);
+            _lootWorker?.Join(joinTimeout);
+
             _realtimeWorker = null;
             _cameraWorker = null;
             _registrationWorker = null;

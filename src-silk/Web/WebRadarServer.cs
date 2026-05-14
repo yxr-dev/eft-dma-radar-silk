@@ -14,6 +14,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 
 using eft_dma_radar.Silk.Misc.Data;
+using eft_dma_radar.Silk.Misc.Workers;
 using eft_dma_radar.Silk.Web.Data;
 using eft_dma_radar.Silk.Tarkov.Unity.IL2CPP;
 using static SDK.Offsets;
@@ -38,8 +39,7 @@ namespace eft_dma_radar.Silk.Web
         private static byte[] _latestJson = Array.Empty<byte>();
         private static WebRadarQuestData? _questDataCache;
         private static WebApplication? _host;
-        private static CancellationTokenSource? _cts;
-        private static Thread? _worker;
+        private static WorkerThread? _worker;
         private static TimeSpan _tickRate;
         private static int _upnpPort = -1;
 
@@ -197,8 +197,10 @@ namespace eft_dma_radar.Silk.Web
         /// </summary>
         public static async Task StopAsync()
         {
-            _cts?.Cancel();
-            _worker?.Join(2000);
+            var w = _worker;
+            _worker = null;
+            w?.Dispose();
+            w?.Join(TimeSpan.FromSeconds(2));
 
             if (_host is not null)
             {
@@ -222,22 +224,22 @@ namespace eft_dma_radar.Silk.Web
 
         private static void StartWorker()
         {
-            _cts = new CancellationTokenSource();
-            _worker = new Thread(() => Worker(_cts.Token))
+            _worker = new WorkerThread
             {
-                IsBackground = true,
-                Name = "WebRadarWorker"
+                Name = "WebRadarWorker",
+                ThreadPriority = ThreadPriority.Normal,
+                SleepDuration = _tickRate,
+                SleepMode = WorkerSleepMode.DynamicSleep,
             };
+            _worker.PerformWork += Tick;
             _worker.Start();
         }
 
-        private static void Worker(CancellationToken ct)
+        private static void Tick(CancellationToken ct)
         {
-            while (!ct.IsCancellationRequested)
+            try
             {
-                try
-                {
-                    var update = _latest;
+                var update = _latest;
                     update.InGame = Memory.InRaid;
                     update.InRaid = Memory.InRaid;
                     update.InHideout = Memory.InHideout;
@@ -442,12 +444,9 @@ namespace eft_dma_radar.Silk.Web
                         Log.WriteLine($"[WebRadar] Serialize error: {ex.Message}");
                     }
                 }
-                catch (Exception ex)
-                {
-                    Log.WriteLine($"[WebRadar] Worker error: {ex.Message}");
-                }
-
-                Thread.Sleep(_tickRate);
+            catch (Exception ex)
+            {
+                Log.WriteLine($"[WebRadar] Worker error: {ex.Message}");
             }
         }
 

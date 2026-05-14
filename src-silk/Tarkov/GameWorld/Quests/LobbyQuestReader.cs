@@ -2,6 +2,8 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0.
 // See LICENSE in the repository root for details.
 
+using eft_dma_radar.Silk.Misc.Workers;
+
 namespace eft_dma_radar.Silk.Tarkov.GameWorld.Quests
 {
     /// <summary>
@@ -16,8 +18,7 @@ namespace eft_dma_radar.Silk.Tarkov.GameWorld.Quests
     {
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
-        private static Thread? _thread;
-        private static volatile bool _shutdown;
+        private static WorkerThread? _worker;
 
         /// <summary>Caller-owned TarkovApplication behaviour cache slot.</summary>
         private static ulong _cachedObjectClass;
@@ -33,19 +34,26 @@ namespace eft_dma_radar.Silk.Tarkov.GameWorld.Quests
         /// </summary>
         internal static void Start()
         {
-            if (_thread is not null)
+            if (_worker is not null)
                 return;
 
-            _shutdown = false;
-            _thread = new Thread(Worker)
+            _worker = new WorkerThread
             {
-                IsBackground = true,
-                Name = "LobbyQuestReader"
+                Name = "LobbyQuestReader",
+                ThreadPriority = ThreadPriority.BelowNormal,
+                SleepDuration = PollInterval,
+                SleepMode = WorkerSleepMode.Default,
             };
-            _thread.Start();
+            _worker.PerformWork += Tick;
+            _worker.Start();
         }
 
-        internal static void Stop() => _shutdown = true;
+        internal static void Stop()
+        {
+            var w = _worker;
+            _worker = null;
+            w?.Dispose();
+        }
 
         /// <summary>Invalidate cached pointers. Called on game stop / process detach.</summary>
         internal static void InvalidateCache()
@@ -54,54 +62,40 @@ namespace eft_dma_radar.Silk.Tarkov.GameWorld.Quests
             QuestManager = null;
         }
 
-        private static void Worker()
+        private static void Tick(CancellationToken ct)
         {
-            Log.WriteLine("[LobbyQuestReader] Thread started.");
-
-            while (!_shutdown)
+            try
             {
-                try
+                // Suspend while in an active raid — the in-raid QuestManager takes over.
+                // Hideout is treated like lobby: the profile is still accessible via TarkovApplication.
+                if (!Memory.Ready || Memory.InRaid)
                 {
-                    Tick();
-                }
-                catch (Exception ex)
-                {
-                    Log.WriteRateLimited(AppLogLevel.Warning, "lobby_quest_err", TimeSpan.FromSeconds(30),
-                        $"[LobbyQuestReader] Error: {ex.Message}");
+                    if (Memory.InRaid)
+                        QuestManager = null;
+                    return;
                 }
 
-                Thread.Sleep((int)PollInterval.TotalMilliseconds);
+                var profilePtr = LobbyProfileResolver.Resolve(ref _cachedObjectClass);
+                if (profilePtr == 0)
+                    return;
+
+                var qm = QuestManager;
+                if (qm is null)
+                {
+                    qm = new QuestManager(profilePtr, "");
+                    QuestManager = qm;
+                    Log.WriteLine($"[LobbyQuestReader] QuestManager created — profile @ 0x{profilePtr:X}, " +
+                        $"{qm.ActiveQuests.Count} active quests");
+                }
+                else
+                {
+                    qm.Refresh();
+                }
             }
-
-            Log.WriteLine("[LobbyQuestReader] Thread exiting.");
-        }
-
-        private static void Tick()
-        {
-            // Suspend while in an active raid — the in-raid QuestManager takes over.
-            // Hideout is treated like lobby: the profile is still accessible via TarkovApplication.
-            if (!Memory.Ready || Memory.InRaid)
+            catch (Exception ex)
             {
-                if (Memory.InRaid)
-                    QuestManager = null;
-                return;
-            }
-
-            var profilePtr = LobbyProfileResolver.Resolve(ref _cachedObjectClass);
-            if (profilePtr == 0)
-                return;
-
-            var qm = QuestManager;
-            if (qm is null)
-            {
-                qm = new QuestManager(profilePtr, "");
-                QuestManager = qm;
-                Log.WriteLine($"[LobbyQuestReader] QuestManager created — profile @ 0x{profilePtr:X}, " +
-                    $"{qm.ActiveQuests.Count} active quests");
-            }
-            else
-            {
-                qm.Refresh();
+                Log.WriteRateLimited(AppLogLevel.Warning, "lobby_quest_err", TimeSpan.FromSeconds(30),
+                    $"[LobbyQuestReader] Error: {ex.Message}");
             }
         }
     }

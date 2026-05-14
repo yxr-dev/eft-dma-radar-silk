@@ -4,6 +4,7 @@
 
 using System.Net;
 using System.Net.Http;
+using eft_dma_radar.Silk.Misc.Workers;
 
 namespace eft_dma_radar.Silk.Tarkov
 {
@@ -26,8 +27,7 @@ namespace eft_dma_radar.Silk.Tarkov
         #region State
 
         private static readonly ConcurrentDictionary<string, ProfileData?> _profiles = new(StringComparer.OrdinalIgnoreCase);
-        private static volatile bool _running;
-        private static Thread? _worker;
+        private static WorkerThread? _worker;
 
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
@@ -43,15 +43,16 @@ namespace eft_dma_radar.Silk.Tarkov
         /// </summary>
         public static void Start()
         {
-            if (_running)
+            if (_worker is not null)
                 return;
-            _running = true;
-            _worker = new Thread(Worker)
+            _worker = new WorkerThread
             {
-                IsBackground = true,
                 Name = "ProfileService",
-                Priority = ThreadPriority.BelowNormal,
+                ThreadPriority = ThreadPriority.BelowNormal,
+                SleepDuration = TimeSpan.FromMilliseconds(PollIntervalMs),
+                SleepMode = WorkerSleepMode.Default,
             };
+            _worker.PerformWork += Tick;
             _worker.Start();
             Log.WriteLine("[ProfileService] Started.");
         }
@@ -61,7 +62,9 @@ namespace eft_dma_radar.Silk.Tarkov
         /// </summary>
         public static void Stop()
         {
-            _running = false;
+            var w = _worker;
+            _worker = null;
+            w?.Dispose();
             _profiles.Clear();
             Log.WriteLine("[ProfileService] Stopped.");
         }
@@ -100,57 +103,55 @@ namespace eft_dma_radar.Silk.Tarkov
 
         #region Worker
 
-        private static void Worker()
+        /// <summary>
+        /// Single tick of the lookup loop. WorkerThread invokes this at the
+        /// configured PollIntervalMs cadence; the inter-request delay is
+        /// applied here by waiting on the cancellation handle after a fetch
+        /// so a Stop() request wakes us immediately.
+        /// </summary>
+        private static void Tick(CancellationToken ct)
         {
-            while (_running)
+            if (!SilkProgram.Config.ProfileLookups)
+                return;
+
+            string? pendingId = null;
+            foreach (var kvp in _profiles)
             {
-                try
+                if (kvp.Value is null)
                 {
-                    if (!SilkProgram.Config.ProfileLookups)
-                    {
-                        Thread.Sleep(PollIntervalMs);
-                        continue;
-                    }
-
-                    string? pendingId = null;
-                    foreach (var kvp in _profiles)
-                    {
-                        if (kvp.Value is null)
-                        {
-                            pendingId = kvp.Key;
-                            break;
-                        }
-                    }
-
-                    if (pendingId is null)
-                    {
-                        Thread.Sleep(PollIntervalMs);
-                        continue;
-                    }
-
-                    var profile = FetchProfile(pendingId);
-                    if (profile is not null)
-                    {
-                        _profiles[pendingId] = profile;
-                        Log.WriteLine($"[ProfileService] Fetched profile for {pendingId}: {profile.Info?.Nickname ?? "?"}");
-                    }
-                    else
-                    {
-                        // Mark as empty so we don't retry indefinitely
-                        _profiles[pendingId] = ProfileData.Empty;
-                    }
-
-                    Thread.Sleep(RequestDelayMs);
-                }
-                catch (Exception ex) when (ex is not ThreadInterruptedException)
-                {
-                    Log.WriteLine($"[ProfileService] Worker error: {ex.Message}");
-                    Thread.Sleep(RequestDelayMs);
+                    pendingId = kvp.Key;
+                    break;
                 }
             }
+
+            if (pendingId is null)
+                return;
+
+            try
+            {
+                var profile = FetchProfile(pendingId, ct);
+                if (profile is not null)
+                {
+                    _profiles[pendingId] = profile;
+                    Log.WriteLine($"[ProfileService] Fetched profile for {pendingId}: {profile.Info?.Nickname ?? "?"}");
+                }
+                else
+                {
+                    // Mark as empty so we don't retry indefinitely
+                    _profiles[pendingId] = ProfileData.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.WriteLine($"[ProfileService] Tick error: {ex.Message}");
+            }
+
+            // Rate-limit ourselves so we don't hammer tarkov.dev.
+            // Cancellable: Stop() wakes us instantly.
+            ct.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(RequestDelayMs));
         }
 
-        private static ProfileData? FetchProfile(string accountId)
+        private static ProfileData? FetchProfile(string accountId, CancellationToken stopCt)
         {
             try
             {
@@ -162,13 +163,17 @@ namespace eft_dma_radar.Silk.Tarkov
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.UserAgent.ParseAdd("eft-dma-radar/1.0");
 
-                using var cts = new CancellationTokenSource(RequestTimeout);
+                // Link the per-request timeout with the worker's stop token so a Stop()
+                // also aborts an in-flight HTTP request.
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(stopCt);
+                cts.CancelAfter(RequestTimeout);
                 using var response = SilkProgram.HttpClient.Send(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
                     Log.WriteLine("[ProfileService] Rate limited (429), pausing...");
-                    Thread.Sleep(RateLimitPauseMs);
+                    // Cancellable pause — Stop() wakes us instantly.
+                    stopCt.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(RateLimitPauseMs));
                     return null;
                 }
 
