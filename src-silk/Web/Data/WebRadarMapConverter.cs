@@ -1,0 +1,44 @@
+namespace eft_dma_radar.Silk.Web.Data
+{
+    /// <summary>
+    /// Converts a <see cref="MapConfig"/> to a <see cref="WebRadarMapInfo"/> for the web client.
+    /// </summary>
+    internal static class WebRadarMapConverter
+    {
+        // Cache the last conversion. MapConfig is immutable; reference equality is
+        // sufficient to detect a map switch, and avoids rebuilding the layer list
+        // every web-radar tick.
+        private static MapConfig? _cachedConfig;
+        private static WebRadarMapInfo? _cachedInfo;
+
+        public static WebRadarMapInfo? Convert(MapConfig? cfg)
+        {
+            if (cfg is null)
+                return null;
+
+            if (ReferenceEquals(cfg, _cachedConfig))
+                return _cachedInfo;
+
+            var info = new WebRadarMapInfo
+            {
+                Name = cfg.Name,
+                MapId = cfg.MapID.FirstOrDefault() ?? string.Empty,
+                OriginX = cfg.X,
+                OriginY = cfg.Y,
+                Scale = cfg.Scale,
+                SvgScale = cfg.SvgScale,
+                Layers = cfg.MapLayers.Select(static l => new WebRadarMapLayer
+                {
+                    MinHeight = l.MinHeight,
+                    MaxHeight = l.MaxHeight,
+                    DimBaseLayer = l.DimBaseLayer,
+                    Filename = l.Filename
+                }).ToList()
+            };
+
+            _cachedConfig = cfg;
+            _cachedInfo = info;
+            return info;
+        }
+    }
+}
