@@ -114,6 +114,26 @@ namespace eft_dma_radar.Silk.UI.Maps
         public static bool IsSupported(string mapId) => _entries.ContainsKey(mapId);
 
         /// <summary>
+        /// Resolves a tile-URL template by its catalog <see cref="Entry.CacheKey"/>.
+        /// Used by the web radar's tile proxy so buddies can request tiles by a
+        /// stable key without exposing the upstream CDN URL — and so we can reject
+        /// path-traversal attempts before they reach <see cref="TileCache"/>.
+        /// </summary>
+        public static bool TryGetTemplateByCacheKey(string cacheKey, out string template)
+        {
+            foreach (var kv in _entries)
+            {
+                if (string.Equals(kv.Value.CacheKey, cacheKey, StringComparison.Ordinal))
+                {
+                    template = kv.Value.TileUrlTemplate;
+                    return true;
+                }
+            }
+            template = string.Empty;
+            return false;
+        }
+
+        /// <summary>
         /// Builds a <see cref="MapConfig"/> for satellite rendering: encodes the
         /// tarkov.dev transform into <see cref="MapConfig.X"/>/<see cref="MapConfig.Y"/>/
         /// <see cref="MapConfig.Scale"/>/<see cref="MapConfig.SvgScale"/> so the existing

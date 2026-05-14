@@ -163,6 +163,25 @@ namespace eft_dma_radar.Silk.Web
                 ctx.Response.Headers.CacheControl = "public, max-age=3600";
                 return Results.Json(data, _jsonOpts);
             });
+            _host.MapGet("/api/tile/{cacheKey}/{z:int}/{x:int}/{y:int}.png",
+                async (HttpContext ctx, string cacheKey, int z, int x, int y) =>
+            {
+                // Server-side proxy for tarkov.dev satellite tiles. Buddies on the web
+                // radar can't fetch the upstream CDN directly because tarkov.dev doesn't
+                // serve CORS headers; routing through the host puts every request on the
+                // same origin. cacheKey must resolve to a known catalog entry — anything
+                // else returns 404 (also blocks path-traversal attempts at the disk cache).
+                if (!SatelliteMapCatalog.TryGetTemplateByCacheKey(cacheKey, out var template))
+                    return Results.NotFound();
+
+                var bytes = await TileCache.GetTileAsync(template, cacheKey, z, x, y, ctx.RequestAborted)
+                    .ConfigureAwait(false);
+                if (bytes is null)
+                    return Results.NotFound();
+
+                ctx.Response.Headers.CacheControl = "public, max-age=86400, immutable";
+                return Results.Bytes(bytes, "image/png");
+            });
             _host.MapGet("/health", () => Results.Text("OK"));
 
             await _host.StartAsync().ConfigureAwait(false);
@@ -261,11 +280,14 @@ namespace eft_dma_radar.Silk.Web
                             : "Waiting for Raid Start";
                     }
 
-                    // Map
-                    var map = MapManager.Map;
-                    update.Map = map is not null
-                        ? WebRadarMapConverter.Convert(map.Config)
-                        : null;
+                    // Map — always emit the raw SVG config so the buddy projection
+                    // is stable regardless of the host's local satellite toggle.
+                    // Satellite metadata rides along as a side-car for buddies that
+                    // opt in client-side.
+                    update.Map = WebRadarMapConverter.Convert(
+                        MapManager.RawConfig,
+                        MapManager.SatelliteConfig,
+                        MapManager.SatelliteEntry);
 
                     // Players
                     var players = Memory.Players;

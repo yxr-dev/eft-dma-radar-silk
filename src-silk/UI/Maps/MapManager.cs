@@ -20,6 +20,9 @@ namespace eft_dma_radar.Silk.UI.Maps
         private static IRadarMap? _currentMap;
         private static string? _currentMapId;
         private static bool _currentIsSatellite;
+        private static MapConfig? _currentRawConfig;
+        private static SatelliteMapCatalog.Entry? _currentSatelliteEntry;
+        private static MapConfig? _currentSatelliteConfig;
         private static volatile bool _isLoading;
         private static readonly Lock _lock = new();
 
@@ -35,6 +38,29 @@ namespace eft_dma_radar.Silk.UI.Maps
 
         /// <summary>Currently active map, or <see langword="null"/> if none loaded.</summary>
         internal static IRadarMap? Map => _currentMap;
+
+        /// <summary>
+        /// Raw SVG <see cref="MapConfig"/> for the currently loaded map — always the
+        /// SVG-space config, regardless of whether the local renderer is currently in
+        /// satellite mode. Used by the web radar so its projection isn't disturbed by
+        /// the host's satellite toggle.
+        /// </summary>
+        internal static MapConfig? RawConfig => _currentRawConfig;
+
+        /// <summary>
+        /// Satellite-space <see cref="MapConfig"/> for the currently loaded map, or
+        /// <see langword="null"/> if the map has no satellite tiles. This is the same
+        /// config <see cref="SatelliteMap"/> would render against; the web radar uses
+        /// it for projection when its own satellite toggle is on.
+        /// </summary>
+        internal static MapConfig? SatelliteConfig => _currentSatelliteConfig;
+
+        /// <summary>
+        /// Tarkov.dev satellite-tile catalog entry for the currently loaded map, or
+        /// <see langword="null"/> if unsupported. Exposed so the web radar can fetch
+        /// tiles directly from the same CDN.
+        /// </summary>
+        internal static SatelliteMapCatalog.Entry? SatelliteEntry => _currentSatelliteEntry;
 
         /// <summary>Whether a map is currently being loaded on a background thread.</summary>
         internal static bool IsLoading => _isLoading;
@@ -140,6 +166,20 @@ namespace eft_dma_radar.Silk.UI.Maps
                 _currentMap = null;
                 _currentMapId = null;
                 old?.Dispose();
+
+                // Cache raw SVG config + satellite metadata immediately so the web radar
+                // can serve a stable projection even while the active map is mid-load.
+                _currentRawConfig = config;
+                if (SatelliteMapCatalog.TryGet(mapId, out var satEntry))
+                {
+                    _currentSatelliteEntry = satEntry;
+                    _currentSatelliteConfig = SatelliteMapCatalog.BuildConfig(mapId, config, satEntry);
+                }
+                else
+                {
+                    _currentSatelliteEntry = null;
+                    _currentSatelliteConfig = null;
+                }
 
                 _isLoading = true;
                 var capturedConfig = config;

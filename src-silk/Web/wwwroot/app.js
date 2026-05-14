@@ -111,6 +111,7 @@ const defaults = {
   activeWebPreset: "Custom",
 
   showMap: true,
+  useSatellite: false,
   zoom: 1.0,
   rotateWithLocal: false,
   pollMs: 50,
@@ -275,6 +276,7 @@ const $ = id => document.getElementById(id);
 
 const inputs = {
   showMap:         $("showMap"),
+  useSatellite:    $("useSatellite"),
   zoom:            $("zoom"),
   rotateWithLocal: $("rotateWithLocal"),
   pollMs:          $("pollMs"),
@@ -459,6 +461,7 @@ function bindAllInputs() {
   };
 
   bind(inputs.showMap, "showMap");
+  bind(inputs.useSatellite, "useSatellite");
   bind(inputs.zoom, "zoom");
   bind(inputs.rotateWithLocal, "rotateWithLocal");
   bind(inputs.pollMs, "pollMs");
@@ -564,10 +567,15 @@ function listen(el, key, isColor, transform) {
     updateRangeValue(key);
     if (key === "freeMode") updateFollowBadge();
     if (key === "pollMs") startPolling();
+    // Toggling the projection (SVG ↔ satellite) invalidates the free-pan
+    // anchor — its coords belong to the old projection. Reset so the next
+    // frame re-anchors on the focus player.
+    if (key === "useSatellite") freeAnchor = { x: 0, y: 0, mapId: "" };
   });
 }
 
 listen(inputs.showMap, "showMap");
+listen(inputs.useSatellite, "useSatellite");
 listen(inputs.zoom, "zoom", false, Number);
 listen(inputs.rotateWithLocal, "rotateWithLocal");
 listen(inputs.pollMs, "pollMs", false, Number);
@@ -1066,6 +1074,71 @@ function updatePlayerCounts(players) {
 const svgImgCache = new Map();
 const svgMetaCache = new Map();
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SATELLITE TILE CACHE
+   ═══════════════════════════════════════════════════════════════════════════ */
+// Image elements keyed by tile URL — the browser cache handles bytes;
+// this map dedupes <img> objects so the same tile reuses the same image.
+const tileImgCache = new Map();
+// Memoized coverage rect per satellite-info object (cleared when the
+// satellite info reference changes — i.e. when the map switches).
+let _satCovOwner = null;
+let _satCov = null;
+function getSatelliteCoverage(sat) {
+  if (sat === _satCovOwner && _satCov) return _satCov;
+  const ox = sat.originX, oy = sat.originY, sc = sat.scale, svgSc = sat.svgScale;
+  // Mirror the C# projection in MapParams.ToMapPos / SatelliteMap ctor.
+  const p1x = (ox * svgSc) + (sat.boundsLng1 * sc * svgSc);
+  const p1y = (oy * svgSc) - (sat.boundsLat1 * sc * svgSc);
+  const p2x = (ox * svgSc) + (sat.boundsLng2 * sc * svgSc);
+  const p2y = (oy * svgSc) - (sat.boundsLat2 * sc * svgSc);
+  const ts = sat.tileSize || 256;
+  const n = 1 << sat.loadZoom;
+  const minPx = Math.min(p1x, p2x), maxPx = Math.max(p1x, p2x);
+  const minPy = Math.min(p1y, p2y), maxPy = Math.max(p1y, p2y);
+  const minTileX = Math.max(0, Math.floor(minPx / ts));
+  const maxTileX = Math.min(n - 1, Math.floor(maxPx / ts));
+  const minTileY = Math.max(0, Math.floor(minPy / ts));
+  const maxTileY = Math.min(n - 1, Math.floor(maxPy / ts));
+  const origX = minTileX * ts;
+  const origY = minTileY * ts;
+  const w = (maxTileX - minTileX + 1) * ts;
+  const h = (maxTileY - minTileY + 1) * ts;
+  _satCov = { minTileX, maxTileX, minTileY, maxTileY, origX, origY, w, h };
+  _satCovOwner = sat;
+  return _satCov;
+}
+
+function getTileImage(template, z, x, y) {
+  const url = template.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+  let img = tileImgCache.get(url);
+  if (img) return img;
+  img = new Image();
+  // Don't set crossOrigin — we only display tiles, never read back pixels.
+  // Setting it would require the CDN to send CORS headers and would otherwise
+  // fail the load. drawImage works with tainted images.
+  img.src = url;
+  tileImgCache.set(url, img);
+  const el = document.getElementById("mapCacheInfo");
+  if (el) el.textContent = String(svgImgCache.size + tileImgCache.size);
+  return img;
+}
+
+// Are we rendering satellite for this frame? Both the user toggle and
+// the map having satellite metadata must be true.
+function isSatelliteActive(map) {
+  return !!(state.useSatellite && map && map.satellite);
+}
+
+// Active projection scale. Negative for 180°-rotated satellite maps; SVG
+// configs are always positive. Used to flip player heading by π so chevrons/
+// aimlines point the right way on a flipped tile mosaic — mirrors the C#
+// local renderer's "if (Config.Scale < 0) { sin = -sin; cos = -cos; }".
+function getActiveScale(map) {
+  if (isSatelliteActive(map)) return map.satellite.scale ?? 1;
+  return map.scale ?? 1;
+}
+
 function ensureSvgMeta(filename) {
   if (svgMetaCache.has(filename)) return;
   svgMetaCache.set(filename, { w: 0, h: 0, ready: false });
@@ -1144,6 +1217,20 @@ function rotatePoint(px, py, rad) {
 }
 
 function worldToMapUnzoomed(worldX, worldZ, map) {
+  // Pick projection: satellite uses the side-car transform; SVG uses the
+  // top-level fields. Satellite returns coords offset so (0,0) is the
+  // top-left of the tile mosaic — matches the SVG convention so the rest
+  // of the rendering pipeline (mapRect, anchor, mapXYToScreen) is reused.
+  const sat = isSatelliteActive(map);
+  if (sat) {
+    const s = map.satellite;
+    const ox = s.originX, oy = s.originY, sc = s.scale, svgSc = s.svgScale;
+    const cov = getSatelliteCoverage(s);
+    return {
+      x: (ox * svgSc) + (worldX * sc * svgSc) - cov.origX,
+      y: (oy * svgSc) - (worldZ * sc * svgSc) - cov.origY,
+    };
+  }
   const ox = map.originX ?? map.x ?? 0;
   const oy = map.originY ?? map.y ?? 0;
   const sc = map.scale ?? 1;
@@ -1199,25 +1286,37 @@ function drawSvgLayerAnchored(filename, map, cx, cy, zoom, rotRad, anchor, alpha
 }
 
 function getMapScreenRect(map, cx, cy, zoom, anchor) {
-  const base = getBaseLayer(map);
-  if (!base) return null;
-  const bFile = base.filename || base.Filename;
-  if (!bFile) return null;
-  const img = getSvg(bFile);
-  if (!img.complete) return null;
-  const dims = getSvgDims(bFile, img);
-  if (!dims) return null;
-
-  const svgSc = map.svgScale ?? 1;
-  const w = dims.w * svgSc * zoom;
-  const h = dims.h * svgSc * zoom;
+  let w, h;
+  if (isSatelliteActive(map)) {
+    const cov = getSatelliteCoverage(map.satellite);
+    // Satellite "image" extent is the tile mosaic in projection-space pixels
+    // (already at loadZoom resolution — svgScale is baked into worldToMapUnzoomed),
+    // so no svgScale multiplier here.
+    w = cov.w * zoom;
+    h = cov.h * zoom;
+  } else {
+    const base = getBaseLayer(map);
+    if (!base) return null;
+    const bFile = base.filename || base.Filename;
+    if (!bFile) return null;
+    const img = getSvg(bFile);
+    if (!img.complete) return null;
+    const dims = getSvgDims(bFile, img);
+    if (!dims) return null;
+    const svgSc = map.svgScale ?? 1;
+    w = dims.w * svgSc * zoom;
+    h = dims.h * svgSc * zoom;
+  }
   const ax = (anchor?.x ?? 0) * zoom;
   const ay = (anchor?.y ?? 0) * zoom;
-
   return { left: cx - ax, top: cy - ay, w, h };
 }
 
 function drawMap(map, localWorldY, cx, cy, zoom, rotRad, anchor) {
+  if (isSatelliteActive(map)) {
+    return drawSatelliteMap(map.satellite, cx, cy, zoom, rotRad, anchor);
+  }
+
   const base = getBaseLayer(map);
   if (!base) return false;
 
@@ -1237,6 +1336,47 @@ function drawMap(map, localWorldY, cx, cy, zoom, rotRad, anchor) {
     const oFile = overlay.filename || overlay.Filename;
     if (oFile && oFile !== bFile) drawSvgLayerAnchored(oFile, map, cx, cy, zoom, rotRad, anchor, 1);
   }
+  return true;
+}
+
+function drawSatelliteMap(sat, cx, cy, zoom, rotRad, anchor) {
+  const cov = getSatelliteCoverage(sat);
+
+  // Pick a pyramid zoom level matching screen pixels per base-pixel.
+  // Each base-pixel (at loadZoom) renders as `zoom` screen pixels. A tile at
+  // pyramid z covers (tileSize << (loadZoom - z)) base-pixels, so its
+  // on-screen size is tileSize * (1 << (loadZoom - z)) * zoom. We want
+  // this >= tileSize → loadZoom - z >= -log2(zoom) → z <= loadZoom + log2(zoom).
+  let z = sat.loadZoom + Math.ceil(Math.log2(Math.max(zoom, 1e-6)));
+  z = clamp(z, sat.minZoom, sat.maxZoom);
+  const zShift = sat.loadZoom - z;
+  const tilePxAtBase = sat.tileSize << zShift; // base-pixels per tile at this z
+
+  // Background fill for missing tiles
+  ctx.save();
+  ctx.fillStyle = "#14141a";
+  ctx.translate(cx, cy);
+  if (state.rotateWithLocal) ctx.rotate(-rotRad);
+  ctx.translate(-(anchor?.x ?? 0) * zoom, -(anchor?.y ?? 0) * zoom);
+  ctx.fillRect(0, 0, cov.w * zoom, cov.h * zoom);
+
+  // Coverage in tile-at-z space
+  const firstTx = Math.max(0, Math.floor(cov.origX / tilePxAtBase));
+  const lastTx  = Math.min((1 << z) - 1, Math.floor((cov.origX + cov.w - 1) / tilePxAtBase));
+  const firstTy = Math.max(0, Math.floor(cov.origY / tilePxAtBase));
+  const lastTy  = Math.min((1 << z) - 1, Math.floor((cov.origY + cov.h - 1) / tilePxAtBase));
+
+  for (let tx = firstTx; tx <= lastTx; tx++) {
+    for (let ty = firstTy; ty <= lastTy; ty++) {
+      const img = getTileImage(sat.tileUrlTemplate, z, tx, ty);
+      if (!img.complete || img.naturalWidth === 0) continue;
+      // Tile top-left in projection space → image-relative
+      const px = tx * tilePxAtBase - cov.origX;
+      const py = ty * tilePxAtBase - cov.origY;
+      ctx.drawImage(img, px * zoom, py * zoom, tilePxAtBase * zoom, tilePxAtBase * zoom);
+    }
+  }
+  ctx.restore();
   return true;
 }
 
@@ -1377,7 +1517,10 @@ function drawPlayers(players, map, cx, cy, rotRad, mapRect, localWorldY, hitList
 
     const col = playerColor(p);
     const yaw = Number(p.yaw) || 0;
-    const ang = state.rotateWithLocal ? (yaw - rotRad) : yaw;
+    let ang = state.rotateWithLocal ? (yaw - rotRad) : yaw;
+    // 180°-rotated satellite tiles flip world axes in our projection;
+    // rotate the heading by π so the chevron/aimline match.
+    if (getActiveScale(map) < 0) ang += Math.PI;
 
     drawPlayerMarker(px, py, size, col, ang, isDead);
 
@@ -3453,6 +3596,8 @@ const SHEET_DEFS = {
     rows: [
       { type: "section", text: "Map" },
       { type: "toggle", label: "Show Map",        id: "showMap" },
+      { type: "toggle", label: "Satellite Map",   id: "useSatellite",
+        hint: "Use satellite tiles when available" },
       { type: "toggle", label: "Rotate With Local", id: "rotateWithLocal" },
 
       { type: "section", text: "World" },
