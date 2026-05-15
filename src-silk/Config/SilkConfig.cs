@@ -33,6 +33,49 @@ namespace eft_dma_radar.Silk.Config
         public int Key { get; set; } = -1;
     }
 
+    /// <summary>
+    /// User-facing radar preset entry. Mutable bundle of the 13 radar-layer /
+    /// player-display toggles that <see cref="UI.Presets.PresetManager"/> applies
+    /// in one shot. Built-in baselines are seeded into <see cref="SilkConfig.Presets"/>
+    /// on first load; user-created presets are appended.
+    /// </summary>
+    public sealed class RadarPresetEntry
+    {
+        /// <summary>Stable identifier (slug of name + collision counter).</summary>
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+
+        /// <summary>User-facing name (editable).</summary>
+        [JsonPropertyName("displayName")]
+        public string DisplayName { get; set; } = "";
+
+        /// <summary>Optional explanation of what this preset is for.</summary>
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = "";
+
+        /// <summary>
+        /// If non-null, this preset was seeded from a hardcoded built-in baseline
+        /// with the matching Id, and can be reset back to those defaults.
+        /// User-created presets leave this null.
+        /// </summary>
+        [JsonPropertyName("baselineId")]
+        public string? BaselineId { get; set; }
+
+        [JsonPropertyName("battleMode")] public bool BattleMode { get; set; }
+        [JsonPropertyName("showLoot")] public bool ShowLoot { get; set; } = true;
+        [JsonPropertyName("showCorpses")] public bool ShowCorpses { get; set; } = true;
+        [JsonPropertyName("showContainers")] public bool ShowContainers { get; set; } = true;
+        [JsonPropertyName("showExfils")] public bool ShowExfils { get; set; } = true;
+        [JsonPropertyName("showDoors")] public bool ShowDoors { get; set; } = true;
+        [JsonPropertyName("showAirdrops")] public bool ShowAirdrops { get; set; } = true;
+        [JsonPropertyName("showSwitches")] public bool ShowSwitches { get; set; } = true;
+        [JsonPropertyName("showTransits")] public bool ShowTransits { get; set; } = true;
+        [JsonPropertyName("showAimlines")] public bool ShowAimlines { get; set; } = true;
+        [JsonPropertyName("connectGroups")] public bool ConnectGroups { get; set; } = true;
+        [JsonPropertyName("highAlert")] public bool HighAlert { get; set; } = true;
+        [JsonPropertyName("playersOnTop")] public bool PlayersOnTop { get; set; }
+    }
+
     /// <summary>Per-feature memory write settings.</summary>
     public sealed class MemWritesConfig
     {
@@ -640,6 +683,15 @@ namespace eft_dma_radar.Silk.Config
         [JsonPropertyName("activePresetId")]
         public string ActivePresetId { get; set; } = "Custom";
 
+        /// <summary>
+        /// All persisted radar presets — built-in baselines (Stealth / Loot Run / PvP /
+        /// Quests) are seeded on first load by <see cref="UI.Presets.PresetManager.EnsureSeeded"/>,
+        /// and any user-created presets are appended. Edits live here too; the hardcoded
+        /// baselines in PresetManager are only used as reset targets.
+        /// </summary>
+        [JsonPropertyName("presets")]
+        public List<RadarPresetEntry> Presets { get; set; } = [];
+
         // ── Hotkeys ─────────────────────────────────────────────────────────────
 
         /// <summary>
@@ -716,6 +768,9 @@ namespace eft_dma_radar.Silk.Config
             RightDockWidth = Math.Clamp(RightDockWidth, 260f, 720f);
 
             MemWrites ??= new();
+
+            // Seed built-in preset baselines on first load (or after a fresh install).
+            eft_dma_radar.Silk.UI.Presets.PresetManager.EnsureSeeded(this);
 
             if (string.IsNullOrWhiteSpace(DeviceStr))
                 DeviceStr = "fpga";

@@ -17,6 +17,7 @@ namespace eft_dma_radar.Silk.UI.Panels
         private static readonly (string Glyph, string Label, Action Draw)[] _categories =
         [
             ("G", "General",     DrawGeneralTab),
+            ("R", "Presets",     DrawPresetsTab),
             ("P", "Players",     DrawPlayersTab),
             ("E", "ESP",         DrawEspTab),
             ("M", "Map",         DrawMapTab),

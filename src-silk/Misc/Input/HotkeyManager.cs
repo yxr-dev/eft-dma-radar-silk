@@ -110,7 +110,7 @@ internal static class HotkeyManager
 
         // Presets
         new("PresetCycleNext", "Next Preset", "Presets",
-            "Cycle to the next radar preset (Stealth → Loot Run → PvP → Quests → Custom)",
+            "Cycle to the next radar preset in your saved list, then Custom",
             static e => { if (e.IsDown) PresetManager.Cycle(+1, SilkProgram.Config); }),
 
         new("PresetCyclePrev", "Previous Preset", "Presets",
@@ -119,7 +119,7 @@ internal static class HotkeyManager
 
         // Layout
         new("ToggleSidebar", "Toggle Sidebar", "Layout",
-            "Show/hide the left icon sidebar (controller/remote-desktop friendly)",
+            "Show/hide the left icon sidebar",
             static e => { if (e.IsDown) eft_dma_radar.Silk.UI.Shell.Sidebar.ToggleVisibility(); }),
 
         new("ToggleSidePanelsDock", "Toggle Side Panels Dock", "Layout",
