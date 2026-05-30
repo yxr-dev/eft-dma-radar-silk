@@ -31,6 +31,12 @@ namespace eft_dma_radar.Silk.UI
 
         private static IWindow _window = null!;
         private static GL _gl = null!;
+
+        /// <summary>
+        /// Shared GL context, exposed for ImGui-side texture uploads (e.g. the
+        /// Map Generator preview). Null until <see cref="OnLoad"/> completes.
+        /// </summary>
+        internal static GL? GlApi => _gl;
         private static IInputContext _input = null!;
         private static SKSurface _skSurface = null!;
         private static GRContext _grContext = null!;

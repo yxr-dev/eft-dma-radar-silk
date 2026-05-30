@@ -186,6 +186,12 @@ namespace eft_dma_radar.Silk.UI
 
         private static void OnMouseScroll(IMouse mouse, ScrollWheel scroll)
         {
+            // Let ImGui windows (e.g. the Map Generator preview) consume the wheel
+            // first — otherwise scrolling over a panel also zooms the radar map
+            // behind it and the panel's own zoom appears not to work.
+            if (ImGuiNET.ImGui.GetIO().WantCaptureMouse)
+                return;
+
             if (!InRaid)
                 return;
 

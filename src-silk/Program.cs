@@ -66,6 +66,14 @@ namespace eft_dma_radar.Silk
                 if (Log.EnableDebugLogging)
                     Log.WriteLine("[SilkProgram] Debug logging enabled.");
 
+                // Vischeck — apply persisted classifier rules + worker toggles +
+                // diagnostic-logging flags to the live static singletons before
+                // anything that might attach starts.
+                eft_dma_radar.Silk.Tarkov.Unity.PhysX.VisibilityClassifier.LoadFromConfig(Config);
+                eft_dma_radar.Silk.Tarkov.Unity.PhysX.VisibilityWorker.LoadFromConfig(Config);
+                eft_dma_radar.Silk.Tarkov.Unity.PhysX.VisCheckDiagnostics.LoadFromConfig(Config);
+
+                if (Config.TraceDmaExceptions) ExceptionTracer.Enabled = true;
                 ExceptionTracer.Install();
 
                 SetHighPerformanceMode();
