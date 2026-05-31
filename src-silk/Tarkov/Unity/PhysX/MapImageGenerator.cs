@@ -29,6 +29,20 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
         public float MarginPx { get; set; } = 32f;
 
         /// <summary>
+        /// Whole-map 180° flip baked into the projection. Only <c>0</c> and
+        /// <c>180</c> are supported. 180 point-reflects the image (negates both
+        /// world X and Z) so high-Z geometry lands at the BOTTOM — e.g. a ship's
+        /// bow drawn down instead of up. The config then carries a NEGATIVE
+        /// <c>scale</c> (the local-map convention — see MapConfig.Rotation docs),
+        /// so <see cref="UI.Maps.MapParams.ToMapPos"/> negates both world axes for
+        /// entity positions AND Player.Draw flips the heading chevron/aimline to
+        /// match (it keys off Scale &lt; 0). Using the config's rotation:180 field
+        /// instead would fix positions but leave headings backwards — that field
+        /// only drives the tarkov.dev maps that physically rotate their canvas.
+        /// </summary>
+        public int RotationDegrees { get; set; } = 0;
+
+        /// <summary>
         /// Actors whose world AABB exceeds this in X or Z are dropped — catches
         /// map-spanning "world bounds" / skybox colliders that would otherwise
         /// blow up the map extent.
@@ -304,6 +318,9 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
         public float Ppm { get; init; }
         public float CfgX { get; init; }
         public float CfgY { get; init; }
+
+        /// <summary>Config rotation (0 or 180) baked into the projection.</summary>
+        public int Rotation { get; init; }
         public int Width { get; init; }
         public int Height { get; init; }
 
@@ -472,7 +489,9 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
             }
 
             // 3. Resolution + config params (must mirror MapParams.ToMapPos with
-            //    rotation 0 / SvgScale 1):  mapX = cfgX + wx*ppm ;  mapY = cfgY - wz*ppm
+            //    SvgScale 1). unflipped : mapX = cfgX + wx*ppm ; mapY = cfgY - wz*ppm
+            //    flipped 180° (drawn with a point-reflected projection; emitted as
+            //    a negative scale): mapX = cfgX - wx*ppm ; mapY = cfgY + wz*ppm
             float ppm = opts.PixelsPerMeter;
             float margin = opts.MarginPx;
             int W = (int)MathF.Ceiling((wxMax - wxMin) * ppm + 2 * margin);
@@ -486,8 +505,11 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
             }
             if (W < 1 || H < 1) { error = "degenerate map bounds"; return false; }
 
-            float cfgX = margin - wxMin * ppm;
-            float cfgY = margin + wzMax * ppm;
+            // rotation 180 puts the projection origin at the opposite world corner
+            // so the canvas still fills [margin, W-margin] x [margin, H-margin].
+            bool rot180 = opts.RotationDegrees == 180;
+            float cfgX = rot180 ? margin + wxMax * ppm : margin - wxMin * ppm;
+            float cfgY = rot180 ? margin - wzMin * ppm : margin + wzMax * ppm;
             float ySpan = MathF.Max(0.001f, wyMax - wyMin);
 
             string mapName = SanitizeFile(mapId);
@@ -627,6 +649,7 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
                 Ppm = ppm,
                 CfgX = cfgX,
                 CfgY = cfgY,
+                Rotation = rot180 ? 180 : 0,
                 Width = W,
                 Height = H,
                 WxMin = wxMin, WxMax = wxMax,
@@ -676,7 +699,14 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
                 mapID = new[] { plan.MapId },
                 x = plan.CfgX,
                 y = plan.CfgY,
-                scale = plan.Ppm,
+                // A 180° flip is encoded as a NEGATIVE scale (the local-map
+                // convention — see MapConfig.Rotation docs), NOT the rotation
+                // field. Negative scale makes ToMapPos negate both world axes for
+                // positions AND makes Player.Draw flip the heading chevron/aimline
+                // (it keys off Scale < 0). The rotation field only drives the
+                // tarkov.dev maps that physically rotate their canvas, so using it
+                // here would fix positions but leave every heading backwards.
+                scale = plan.Rotation == 180 ? -plan.Ppm : plan.Ppm,
                 svgScale = 1f,
                 disableDimming = false,
                 mapLayers = plan.Layers.Select(l => new
@@ -762,7 +792,12 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.PhysX
 
             float ppm = plan.Ppm, cfgX = plan.CfgX, cfgY = plan.CfgY;
             float wyMin = plan.WyMin, ySpan = plan.YSpan;
-            Vector2 Project(Vector3 w) => new(cfgX + w.X * ppm, cfgY - w.Z * ppm);
+            // Must match MapParams.ToMapPos for plan.Rotation so geometry lands
+            // where live players are plotted (180 negates both world axes).
+            bool rot180 = plan.Rotation == 180;
+            Vector2 Project(Vector3 w) => rot180
+                ? new(cfgX - w.X * ppm, cfgY + w.Z * ppm)
+                : new(cfgX + w.X * ppm, cfgY - w.Z * ppm);
             int Bucket(float y)
             {
                 int b = (int)((y - wyMin) / ySpan * (HeightBuckets - 1));
