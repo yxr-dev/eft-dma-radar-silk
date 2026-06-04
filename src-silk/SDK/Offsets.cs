@@ -1032,7 +1032,7 @@ namespace SDK
         }
         public readonly partial struct Special
         {
-            public static ulong TypeInfoTableRva = 0x5CD1848;
+            public static ulong TypeInfoTableRva = 0; // was 0x5CD1848
             public static uint EFTHardSettings_TypeIndex = 225;
             public static uint GPUInstancerManager_TypeIndex = 4920;
             public static uint WeatherController_TypeIndex = 10112;
