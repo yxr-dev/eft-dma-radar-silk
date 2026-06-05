@@ -25,9 +25,9 @@ namespace SDK
         }
         public readonly partial struct MainMenuShowOperation
         {
-            public static uint _afkMonitor = 0x38;
-            public static uint _preloaderUI = 0x58;
-            public static uint _profile = 0x48;
+            public static uint _afkMonitor = 0x48; // 0x38
+            public static uint _preloaderUI = 0x60; // 0x58
+            public static uint _profile = 0x50; // 0x48
         }
         public readonly partial struct PreloaderUI
         {
@@ -36,61 +36,61 @@ namespace SDK
         }
         public readonly partial struct AfkMonitor
         {
-            public static uint Delay = 0x10;
+            public static uint Delay = 0x10; // _afkTimeout
         }
         public readonly partial struct GameWorld
         {
-            public static uint GameDateTime = 0xD8;
-            public static uint SynchronizableObjectLogicProcessor = 0x248;
+            public static uint GameDateTime = 0xF0; // 0xD8
+            public static uint SynchronizableObjectLogicProcessor = 0x270; // 0x248
         }
         public readonly partial struct ClientLocalGameWorld
         {
             public static uint BtrController = 0x28;
             public static uint TransitController = 0x38;
-            public static uint ExfilController = 0x58;
-            public static uint ClientShellingController = 0xA8;
-            public static uint LocationId = 0xD0;
+            public static uint ExfilController = 0x68; // 0x58
+            public static uint ClientShellingController = 0xC0; // 0xA8
+            public static uint LocationId = 0xE8; // 0xD0
             /// <summary>
             /// <c>generic&lt;&gt; TrajectoryCalculatorPool</c> — game's pool of <see cref="TrajectoryCalculator"/>
             /// instances. Useful when reading the game's own per-shot trajectory state.
             /// </summary>
-            public static uint TrajectoryCalculatorPool = 0x160;
+            public static uint TrajectoryCalculatorPool = 0x178; // 0x160
             /// <summary>
             /// <c>&lt;ClientBallisticCalculator&gt;k__BackingField</c> — present in some game modes
             /// (often null on standard PMC raids). Prefer <see cref="SharedBallisticsCalculator"/>
             /// as the primary read target and fall back here only if non-null.
             /// </summary>
-            public static uint ClientBallisticCalculator = 0x170;
+            public static uint ClientBallisticCalculator = 0x188; // 0x170
             /// <summary>
             /// <c>_sharedBallisticsCalculator</c> — the live <see cref="BallisticsCalculator"/>
             /// instance used by every fired shot in the raid. Confirmed 0x178 on
             /// Interchange 2026-05-17 match dump.
             /// </summary>
-            public static uint SharedBallisticsCalculator = 0x178;
-            public static uint LampControllers = 0x188;
-            public static uint AllAlivePlayerBridges = 0x190;
-            public static uint LootList = 0x198;
-            public static uint RegisteredPlayers = 0x1B8;
-            public static uint Platforms = 0x1C8;
-            public static uint ItemOwners = 0x1E0;
-            public static uint PlatformAdapters = 0x1E8;
-            public static uint BorderZones = 0x1F0;
-            public static uint SpeakerManager = 0x200;
-            public static uint MainPlayer = 0x210;
-            public static uint World = 0x218;
-            public static uint ObjectsFactory = 0x220;
-            public static uint SynchronizableObjectLogicProcessor = 0x248;
-            public static uint MineManager = 0x250;
-            public static uint Turnables = 0x278;
-            public static uint Windows = 0x280;
-            public static uint Grenades = 0x288;
-            public static uint QuestLootItems = 0x240;
-            public static uint RestrictableZones = 0x2B8;
-            public static uint NetworkWorld = 0x2D0;
+            public static uint SharedBallisticsCalculator = 0x190; // 0x178
+            public static uint LampControllers = 0x1A0; // 0x188
+            public static uint AllAlivePlayerBridges = 0x1A8; // 0x190
+            public static uint LootList = 0x1B0; // 0x198
+            public static uint RegisteredPlayers = 0x1D0; // 0x1B8
+            public static uint Platforms = 0x1E8; // 0x1C8
+            public static uint ItemOwners = 0x200; // 0x1E0
+            public static uint PlatformAdapters = 0x208; // 0x1E8
+            public static uint BorderZones = 0x210; // 0x1F0
+            public static uint SpeakerManager = 0x220; // 0x200
+            public static uint MainPlayer = 0x230; // 0x210
+            public static uint World = 0x238; // 0x218
+            public static uint ObjectsFactory = 0x240; // 0x220
+            public static uint SynchronizableObjectLogicProcessor = 0x270; // 0x248
+            public static uint MineManager = 0x278; // 0x250
+            public static uint Turnables = 0x2A0; // 0x278
+            public static uint Windows = 0x2A8; // 0x280
+            public static uint Grenades = 0x2B0; // 0x288
+            public static uint QuestLootItems = 0x268; // 0x240
+            public static uint RestrictableZones = 0x2E0; // 0x2B8
+            public static uint NetworkWorld = 0x2F8; // 0x2D0
         }
         public readonly partial struct TransitController
         {
-            public static uint TransitPoints = 0x18;
+            public static uint TransitPoints = 0x38; // 0x18
         }
         public readonly partial struct ClientShellingController
         {
@@ -109,9 +109,9 @@ namespace SDK
         public readonly partial struct ArtilleryProjectileClient
         {
             public const uint Position = 0x30;
-            public const uint IsActive = 0x3C;
+            public const uint IsActive = 0x3C; // _flyOn
         }
-        public readonly partial struct TransitPoint
+        public readonly partial struct TransitPoint //  LocationSettings.Location.TransitParameters
         {
             public static uint parameters = 0x20;
         }
@@ -124,7 +124,7 @@ namespace SDK
             public static uint target = 0x38;
             public static uint location = 0x40;
         }
-        public readonly partial struct SynchronizableObject
+        public readonly partial struct SynchronizableObject // EFT.SynchronizableObjects
         {
             public static uint Type = 0x68;
         }
@@ -138,14 +138,14 @@ namespace SDK
             // fresh dump — or override this key in the cache.
             public static uint _activeSynchronizableObjects = 0x18;
         }
-        public readonly partial struct TripwireSynchronizableObject
+        public readonly partial struct TripwireSynchronizableObject // TripwireSynchronizableObject : SynchronizableObject
         {
             public static uint GrenadeTemplateId = 0x118;
             public static uint _tripwireState = 0xE4;
             public static uint FromPosition = 0x14C;
             public static uint ToPosition = 0x158;
         }
-        public readonly partial struct BorderZone
+        public readonly partial struct BorderZone // BorderZone : MonoBehavior, IPhysicsTrigger
         {
             public static uint Description = 0x60;
             public static uint _extents    = 0x28; // Vector2 half-extents (x,z) of the zone rectangle
@@ -207,7 +207,7 @@ namespace SDK
             /// <summary><c>string mapID</c> — map identifier string. Dump offset 0x0 → memory 0x10.</summary>
             public static uint mapID = 0x10;
             /// <summary><c>PathConfig[] pathsConfigurations</c> — array of path configs. Dump offset 0x8 → memory 0x18.</summary>
-            public static uint pathsConfigurations = 0x18;
+            public static uint pathsConfigurations = 0x8; // 0x18
         }
         public readonly partial struct MapPathConfig
         {
@@ -221,7 +221,7 @@ namespace SDK
             /// </summary>
             public static uint DepotPosition = 0x80;
         }
-        public readonly partial struct BTRView
+        public readonly partial struct BTRView // BTRView : MonoBehavior
         {
             public static uint turret = 0x60;
             public static uint CurrentSpeed = 0x80;
@@ -312,7 +312,7 @@ namespace SDK
             public static uint ScavExfiltrationPointArray = 0x28;
             public static uint SecretExfiltrationPointArray = 0x30;
         }
-        public readonly partial struct Exfil
+        public readonly partial struct Exfil // ExfiltrationPoint : MonoBehavior
         {
             public static uint _status = 0x58;
             public static uint Settings = 0x98;
@@ -362,25 +362,25 @@ namespace SDK
             public static uint _characterController = 0x40;
             public static uint MovementContext = 0x60;
             public static uint _playerBody = 0x190;
-            public static uint ProceduralWeaponAnimation = 0x338;
-            public static uint _animators = 0x648;
-            public static uint EnabledAnimators = 0x678;
-            public static uint Corpse = 0x688;
-            public static uint Location = 0x878;
-            public static uint InteractableObject = 0x890;
-            public static uint Profile = 0x908;
-            public static uint Physical = 0x920;
-            public static uint AIData = 0x948;
-            public static uint _healthController = 0x968;
-            public static uint _inventoryController = 0x980;
-            public static uint _handsController = 0x988;
-            public static uint _playerLookRaycastTransform = 0xA18;
-            public static uint InteractionRayOriginOnStartOperation = 0xA24;
-            public static uint InteractionRayDirectionOnStartOperation = 0xA30;
-            public static uint IsYourPlayer = 0xA91;
-            public static uint VoipID = 0x8F8;
-            public static uint Id = 0x900;
-            public static uint GameWorld = 0x600;
+            public static uint ProceduralWeaponAnimation = 0x3B0; // 0x338
+            public static uint _animators = 0x6D8; // 0x648
+            public static uint EnabledAnimators = 0x708; // 0x678
+            public static uint Corpse = 0x718; // 0x688
+            public static uint Location = 0x918; // 0x878
+            public static uint InteractableObject = 0x930; // 0x890
+            public static uint Profile = 0x9B0; // 0x908
+            public static uint Physical = 0x9C8; // 0x920
+            public static uint AIData = 0x9F0; // 0x948
+            public static uint _healthController = 0xA10; // 0x968
+            public static uint _inventoryController = 0xA28; // 0x980
+            public static uint _handsController = 0xA30; // 0x988
+            public static uint _playerLookRaycastTransform = 0xAC0; // 0xA18
+            public static uint InteractionRayOriginOnStartOperation = 0xB08; // 0xA24
+            public static uint InteractionRayDirectionOnStartOperation = 0xB14; // 0xA30
+            public static uint IsYourPlayer = 0xB71; // 0xA91
+            public static uint VoipID = 0x9A0; // 0x8F8
+            public static uint Id = 0x988; // 0x900
+            public static uint GameWorld = 0x680; // 0x600
         }
         public readonly partial struct ObservedPlayerView
         {
@@ -400,7 +400,7 @@ namespace SDK
         public readonly partial struct ObservedPlayerController
         {
             public static uint InventoryController = 0x10;
-            public static uint Player = 0x18;
+            public static uint Player = 0x18; // <PlayerView>k__BackingField
             public static uint InfoContainer = 0xD0;
             public static readonly uint[] MovementController = [0xD8, 0x98];
             public static uint HealthController = 0xE8;
@@ -520,7 +520,7 @@ namespace SDK
         {
             public static uint TOD_Time = 0x118;
         }
-        public readonly partial struct Profile
+        public readonly partial struct Profile // Profile : IProfileDataContainer
         {
             public static uint Id = 0x10;
             public static uint AccountId = 0x18;
@@ -537,16 +537,16 @@ namespace SDK
             public static uint Items = 0x28;           // _userItems — Dictionary<MongoID, EWishlistGroup>
             public static uint WishlistItems = 0x30;   // _wishlistItems — Dictionary<MongoID, EWishlistGroup>
         }
-        public readonly partial struct PlayerInfo
+        public readonly partial struct PlayerInfo // public class ProfileInfoDescriptor
         {
             public static uint Nickname = 0x10;
             public static uint EntryPoint = 0x28;
-            public static uint Side = 0x48;
-            public static uint RegistrationDate = 0x4C;
-            public static uint GroupId = 0x50;
-            public static uint Settings = 0x78;
-            public static uint MemberCategory = 0x80;
-            public static uint Experience = 0x84;
+            public static uint Side = 0x20; // 0x48
+            public static uint RegistrationDate = 0x28; // 0x4C
+            public static uint GroupId = 0x38; // 0x50
+            public static uint Settings = 0x70; // 0x78
+            public static uint MemberCategory = 0x78; // 0x80
+            public static uint Experience = 0x80; // 0x84
         }
         public readonly partial struct SkillManager
         {
@@ -561,7 +561,7 @@ namespace SDK
         {
             public static uint Value = 0x30;
         }
-        public readonly partial struct QuestData
+        public readonly partial struct QuestData // public sealed class QuestStatusData
         {
             public static uint Id = 0x10;
             public static uint Status = 0x1C;
