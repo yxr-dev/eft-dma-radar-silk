@@ -12,11 +12,11 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.IL2CPP
         // ── Constants ────────────────────────────────────────────────────────
 
         private const int MaxTableEntries = 1024;
-        private const int EarlyProbeCount = 64;
-        private const int EarlyProbeRequired = 38;
+        private const int EarlyProbeCount = 16;
+        private const int EarlyProbeRequired = 8;
         private const int MidProbeOffset = 5_000;
-        private const int MidProbeCount = 16;
-        private const int MidProbeRequired = 12;
+        private const int MidProbeCount = 8;
+        private const int MidProbeRequired = 3;
         private const string GameAssemblyName = "GameAssembly.dll";
         private const string LogTag = "[Il2CppDumper]";
 
@@ -26,7 +26,10 @@ namespace eft_dma_radar.Silk.Tarkov.Unity.IL2CPP
         private static readonly (string Sig, int RelOffset, int InstrLen, string Desc)[] TypeInfoTableSigs =
         [
             ("48 8B 05 ? ? ? ? ? ? ? ? ? ? ? 90 48 85 DB 75 ? 48 8D 2D ? ? ? ? 48 89 6C 24 ? 48 8B CD E8 ? ? ? ? 90 ? ? ? 48 85 DB 75 ? 8B CF", 3, 7, "read: mov rax,[rip+rel32] (table lookup)"),
+            ("48 8B 05 ? ? ? ? ? ? ? ? ? ? ? 90 48 85", 3, 7, "read: mov rax,[rip+rel32] (table lookup)"),
             ("48 89 05 ? ? ? ? 48 8B 05 ? ? ? ? 8B 48", 3, 7, "write: mov [rip+rel32],rax (init store)"),
+            ("48 89 05 ? ? ? ? 48 8B 05", 3, 7, "write: mov [rip+rel32],rax; mov rax,[rip+rel32] (minimal)"),
+            ("48 89 05 ? ? ? ?", 3, 7, "write: mov [rip+rel32],rax; mov rax,[rip+rel32] (minimal)"),
         ];
 
         private static readonly (string Il2CppName, string FieldName)[] TypeIndexMap =
