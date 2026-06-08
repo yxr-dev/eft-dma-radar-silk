@@ -695,8 +695,8 @@ namespace SDK
         public readonly partial struct LootableContainer
         {
             public static uint InteractingPlayer = 0x150;
-            public static uint ItemOwner = 0x168;
-            public static uint Template = 0x170;
+            public static uint ItemOwner = 0x178; // 0x168
+            public static uint Template = 0x180; // x170
         }
         public readonly partial struct LootableContainerItemOwner
         {
